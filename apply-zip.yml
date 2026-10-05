@@ -1,0 +1,115 @@
+name: Apply ZIP
+
+# Upload a zip of the whole project (to the repository root or to upload/), then run this.
+# It replaces every file in the repository with the zip's contents, commits, and starts
+# the APK build. The first time it also creates the app's signing key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Build the APK afterwards"
+        type: boolean
+        default: true
+      abi:
+        description: "Phone CPU (arm64-v8a fits almost every phone)"
+        type: choice
+        default: arm64-v8a
+        options:
+          - arm64-v8a
+          - armeabi-v7a
+          - all
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.UCG_TOKEN != '' }}
+      HAS_KEY: ${{ secrets.UCG_KEYSTORE_B64 != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.UCG_TOKEN || github.token }}
+
+      - name: Find and unpack the zip
+        run: |
+          shopt -s nullglob
+          zips=(upload/*.zip *.zip)
+          if [ ${#zips[@]} -eq 0 ]; then
+            echo "::error::No .zip found. Upload it to the repository root or to the upload/ folder."; exit 1
+          fi
+          if [ ${#zips[@]} -gt 1 ]; then
+            echo "::error::More than one zip found (${zips[*]}). Keep only one and run again."; exit 1
+          fi
+          zip="${zips[0]}"
+          echo "Using $zip"
+          rm -rf /tmp/new && mkdir -p /tmp/new
+          unzip -q "$zip" -d /tmp/new
+          rm -rf /tmp/new/__MACOSX
+          root=/tmp/new
+          mapfile -t top < <(find /tmp/new -mindepth 1 -maxdepth 1)
+          if [ ${#top[@]} -eq 1 ] && [ -d "${top[0]}" ]; then root="${top[0]}"; fi
+          if [ ! -f "$root/aether/Cargo.toml" ] || [ ! -f "$root/android/settings.gradle.kts" ]; then
+            echo "::error::This zip does not look like the UC Guard project (aether/ or android/ is missing). Nothing was changed."; exit 1
+          fi
+          echo "ROOT=$root" >> "$GITHUB_ENV"
+
+      - name: Replace the repository files
+        run: |
+          args=(-a --delete --exclude=/.git/ --exclude=/.ucg/)
+          if [ "$HAS_TOKEN" != "true" ]; then
+            args+=(--exclude=/.github/)
+            echo "::warning::The UCG_TOKEN secret is missing, so .github/ was not replaced."
+          fi
+          rsync "${args[@]}" "$ROOT"/ ./
+          rm -rf upload
+
+      - name: Create the signing key (first time only)
+        if: env.HAS_TOKEN == 'true' && env.HAS_KEY != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.UCG_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -f .ucg/signing-cert.sha256 ]; then
+            echo "::error::A signing key was created before, but its secrets are gone. A new key would stop updates from installing over the app on your phone, so none was created. Restore UCG_KEYSTORE_B64 and UCG_KEYSTORE_PASSWORD, or delete .ucg/signing-cert.sha256 if you really want a new key (then uninstall the app once)."
+            exit 1
+          fi
+          PASS=$(openssl rand -hex 24)
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/ucg.jks" -storetype PKCS12 \
+            -alias ucg -keyalg RSA -keysize 4096 -validity 36500 \
+            -storepass "$PASS" -keypass "$PASS" -dname "CN=UC Guard" >/dev/null 2>&1
+          fp=$(keytool -list -v -keystore "$RUNNER_TEMP/ucg.jks" -storepass "$PASS" -alias ucg \
+                 | sed -n 's/^[[:space:]]*SHA256: //p' | head -n1)
+          base64 -w0 "$RUNNER_TEMP/ucg.jks" | gh secret set UCG_KEYSTORE_B64 -R "$REPO"
+          printf '%s' "$PASS" | gh secret set UCG_KEYSTORE_PASSWORD -R "$REPO"
+          printf '%s' "ucg" | gh secret set UCG_KEY_ALIAS -R "$REPO"
+          rm -f "$RUNNER_TEMP/ucg.jks"
+          mkdir -p .ucg
+          printf '%s\n' "$fp" > .ucg/signing-cert.sha256
+          echo "Signing key created. Certificate SHA-256: $fp"
+
+      - name: Commit and push
+        run: |
+          git config user.name "ucg-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -q -m "Apply uploaded zip"
+            git push
+          fi
+
+      - name: Start the APK build
+        if: inputs.build
+        env:
+          GH_TOKEN: ${{ secrets.UCG_TOKEN || github.token }}
+        run: |
+          gh workflow run android.yml --ref "$GITHUB_REF_NAME" -f abi="${{ inputs.abi }}"
+          echo "APK build started. Open the Actions tab to follow it."
