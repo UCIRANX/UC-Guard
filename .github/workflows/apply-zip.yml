@@ -111,5 +111,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.UCG_TOKEN || github.token }}
         run: |
-          gh workflow run android.yml --ref "$GITHUB_REF_NAME" -f abi="${{ inputs.abi }}"
-          echo "APK build started. Open the Actions tab to follow it."
+          # Right after a push GitHub may need a little while to notice a new or changed
+          # workflow file, so keep trying for up to about three minutes.
+          for i in $(seq 1 18); do
+            if gh workflow run android.yml --ref "$GITHUB_REF_NAME" -f abi="${{ inputs.abi }}"; then
+              echo "APK build started. Open the Actions tab to follow it."
+              exit 0
+            fi
+            echo "GitHub has not picked up android.yml yet, retrying in 10 seconds ($i/18)..."
+            sleep 10
+          done
+          echo "::error::Could not start the build. Open Actions, choose 'Build UC Guard APK' and press Run workflow."
+          exit 1
