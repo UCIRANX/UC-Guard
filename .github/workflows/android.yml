@@ -1,0 +1,243 @@
+name: Build UC Guard APK
+
+# Builds the Android app: the Aether core (Rust), Psiphon and the Tor transports (Go),
+# hev-socks5-tunnel (C) and the Kotlin app, then publishes the APKs as a pre-release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      abi:
+        description: "Phone CPU (arm64-v8a fits almost every phone)"
+        type: choice
+        default: arm64-v8a
+        options:
+          - arm64-v8a
+          - armeabi-v7a
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      abis: ${{ steps.pick.outputs.abis }}
+    steps:
+      - id: pick
+        run: |
+          case "${{ inputs.abi }}" in
+            all)         echo 'abis=["arm64-v8a","armeabi-v7a"]' >> "$GITHUB_OUTPUT" ;;
+            armeabi-v7a) echo 'abis=["armeabi-v7a"]' >> "$GITHUB_OUTPUT" ;;
+            *)           echo 'abis=["arm64-v8a"]' >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  build:
+    needs: plan
+    name: Build ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: ${{ fromJson(needs.plan.outputs.abis) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Resolve target
+        run: |
+          case "${{ matrix.abi }}" in
+            arm64-v8a)
+              echo "RUST_TARGET=aarch64-linux-android" >> "$GITHUB_ENV"
+              echo "GO_ARCH=arm64" >> "$GITHUB_ENV"
+              echo "GO_ARM=" >> "$GITHUB_ENV" ;;
+            armeabi-v7a)
+              echo "RUST_TARGET=armv7-linux-androideabi" >> "$GITHUB_ENV"
+              echo "GO_ARCH=arm" >> "$GITHUB_ENV"
+              echo "GO_ARM=7" >> "$GITHUB_ENV" ;;
+          esac
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust target
+        run: rustup target add "$RUST_TARGET"
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Install Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "aether -> target"
+          key: android-${{ matrix.abi }}
+
+      - name: Install cargo-ndk
+        run: cargo ndk --version || cargo install cargo-ndk --locked
+
+      - name: Build Tor transports
+        working-directory: aether
+        run: bash ../pt-build.sh linux "$GO_ARCH" "$PWD/pt" "$GO_ARM"
+
+      - name: Build Psiphon
+        working-directory: aether
+        run: bash ../psiphon-build.sh linux "$GO_ARCH" "$PWD/pt" "$GO_ARM"
+
+      - name: Build Aether core
+        working-directory: aether
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          under=$(echo "$RUST_TARGET" | tr '-' '_')
+          export "BORING_BSSL_RUST_CPPLIB_${under}=static:-bundle=c++"
+          cargo ndk -t ${{ matrix.abi }} --platform 24 build --release --features tor --bin aether
+          bin="target/$RUST_TARGET/release/aether"
+          needed=$(readelf -d "$bin" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+          echo "aether NEEDED: $needed"
+          if grep -qx 'libc++_shared.so' <<<"$needed"; then
+            echo "::error::aether still needs libc++_shared.so"; exit 1
+          fi
+
+      - name: Build hev-socks5-tunnel
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          rm -rf /tmp/hev && mkdir -p /tmp/hev
+          git clone --recursive --depth 1 https://github.com/heiher/hev-socks5-tunnel /tmp/hev/jni
+          cd /tmp/hev
+          "$NDK/ndk-build" \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=jni/Android.mk \
+            NDK_APPLICATION_MK=jni/Application.mk \
+            APP_ABI=${{ matrix.abi }} \
+            APP_PLATFORM=android-24 \
+            "APP_CFLAGS=-O3 -DPKGNAME=ir/uciranx/ucg/core -DCLASSNAME=TProxyService" \
+            -j"$(nproc)"
+          ls -la libs/${{ matrix.abi }}
+
+      - name: Put native parts into the app
+        run: |
+          J=android/app/src/main/jniLibs/${{ matrix.abi }}
+          mkdir -p "$J"
+          cp "aether/target/$RUST_TARGET/release/aether" "$J/libaether.so"
+          for f in aether/pt/*; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f"); n="${n%.exe}"
+            cp "$f" "$J/lib${n}.so"
+          done
+          cp /tmp/hev/libs/${{ matrix.abi }}/libhev-socks5-tunnel.so "$J/"
+          ls -la "$J"
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Prepare signing key
+        env:
+          KS_B64: ${{ secrets.UCG_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.UCG_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.UCG_KEY_ALIAS }}
+        run: |
+          # Every APK must be signed with the same key, otherwise Android refuses to
+          # install it over the previous version. So never fall back to a temporary key.
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "::error::The signing key is missing (UCG_KEYSTORE_B64 / UCG_KEYSTORE_PASSWORD). Add the UCG_TOKEN secret and run 'Apply ZIP' once; it creates the key. Without it updates could not install over the old app, so nothing was built."
+            exit 1
+          fi
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/ucg.jks"
+          echo "UCG_KEYSTORE=$RUNNER_TEMP/ucg.jks" >> "$GITHUB_ENV"
+          fp=$(keytool -list -v -keystore "$RUNNER_TEMP/ucg.jks" -storepass "$KS_PASS" -alias "${KS_ALIAS:-ucg}" \
+                 | sed -n 's/^[[:space:]]*SHA256: //p' | head -n1)
+          echo "Signing certificate SHA-256: $fp"
+          if [ -f .ucg/signing-cert.sha256 ]; then
+            want=$(tr -d '[:space:]' < .ucg/signing-cert.sha256)
+            if [ "$want" != "$(printf '%s' "$fp" | tr -d '[:space:]')" ]; then
+              echo "::error::The signing key in the secrets is not the key earlier builds used. An APK signed with it would not install over the app on your phone, so nothing was built."
+              exit 1
+            fi
+          fi
+
+      - name: Version number
+        run: |
+          # Minutes since 2026-01-01 UTC: always grows, never resets, so every build
+          # is newer than the one already installed.
+          echo "UCG_VERSION_CODE=$(( ($(date -u +%s) - 1767225600) / 60 ))" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: android
+        env:
+          UCG_KEYSTORE_PASSWORD: ${{ secrets.UCG_KEYSTORE_PASSWORD }}
+          UCG_KEY_ALIAS: ${{ secrets.UCG_KEY_ALIAS }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Check the APK can update the installed app
+        run: |
+          apk=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          "$bt/apksigner" verify --print-certs "$apk" | tee /tmp/certs.txt
+          "$bt/aapt2" dump badging "$apk" | head -n1 || true
+
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/*.apk "out/UCGuard-1.0.${UCG_VERSION_CODE}-${{ matrix.abi }}.apk"
+          ls -la out
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UCGuard-${{ matrix.abi }}
+          path: out/*.apk
+          if-no-files-found: error
+
+  publish:
+    name: Publish APKs
+    needs: build
+    if: ${{ always() && needs.build.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: UCGuard-*
+          merge-multiple: true
+
+      - name: List
+        run: ls -la dist
+
+      - name: Publish pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ucg-build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: UC Guard build ${{ github.run_number }}
+          prerelease: true
+          fail_on_unmatched_files: false
+          files: dist/*.apk
+          body: |
+            UC Guard, build ${{ github.run_number }}.
+            Download the arm64-v8a APK for almost every modern phone; armeabi-v7a is for old 32-bit phones.
