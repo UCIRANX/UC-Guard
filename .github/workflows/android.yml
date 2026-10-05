@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       abis: ${{ steps.pick.outputs.abis }}
     steps:
@@ -35,7 +35,7 @@ jobs:
   build:
     needs: plan
     name: Build ${{ matrix.abi }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -119,13 +119,23 @@ jobs:
           rm -rf /tmp/hev && mkdir -p /tmp/hev
           git clone --recursive --depth 1 https://github.com/heiher/hev-socks5-tunnel /tmp/hev/jni
           cd /tmp/hev
+          # The app's TProxyService.kt must declare exactly these JNI methods, otherwise the
+          # library fails to load on the phone. Stop here if hev-socks5-tunnel changed them.
+          for sig in '"TProxyStartService", "(Ljava/lang/String;I)Z"' '"TProxyStopService", "()Z"' \
+                     '"TProxyIsRunning", "()Z"' '"TProxyGetStats", "()[J"'; do
+            if ! grep -qF "$sig" jni/src/hev-jni.c; then
+              echo "::error::hev-socks5-tunnel changed its JNI method $sig. TProxyService.kt has to be updated."
+              grep -n "TProxy" jni/src/hev-jni.c || true
+              exit 1
+            fi
+          done
           "$NDK/ndk-build" \
             NDK_PROJECT_PATH=. \
             APP_BUILD_SCRIPT=jni/Android.mk \
             NDK_APPLICATION_MK=jni/Application.mk \
             APP_ABI=${{ matrix.abi }} \
             APP_PLATFORM=android-24 \
-            "APP_CFLAGS=-O3 -DPKGNAME=ir/uciranx/ucg/core -DCLASSNAME=TProxyService" \
+            "APP_CFLAGS=-O3 -DPKGNAME=ir/uciranx/ucg/core -DCLSNAME=TProxyService" \
             -j"$(nproc)"
           ls -la libs/${{ matrix.abi }}
 
@@ -215,7 +225,7 @@ jobs:
     name: Publish APKs
     needs: build
     if: ${{ always() && needs.build.result != 'cancelled' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:

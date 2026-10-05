@@ -138,6 +138,14 @@ class CoreRunner(private val ctx: Context, private val onExit: (Int) -> Unit) {
 
     fun start(plan: Plan) {
         killStrays(ctx)
+        // A core left over from a crash may still hold the port for a moment; wait for it
+        // to go away, otherwise its dying listener would be mistaken for the new one.
+        val deadline = System.currentTimeMillis() + 3000
+        while (System.currentTimeMillis() < deadline &&
+            (probe(plan.port) || probe(PORT_TUNNEL))
+        ) {
+            Thread.sleep(150)
+        }
         File(ctx.filesDir, "tor").mkdirs()
         File(ctx.filesDir, "psiphon").mkdirs()
 

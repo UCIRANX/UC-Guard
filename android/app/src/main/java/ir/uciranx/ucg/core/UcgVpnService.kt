@@ -14,6 +14,7 @@ import ir.uciranx.ucg.data.Settings
 import ir.uciranx.ucg.data.SettingsStore
 import ir.uciranx.ucg.data.SplitMode
 import ir.uciranx.ucg.data.isIpv6
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,7 +48,12 @@ class UcgVpnService : VpnService() {
         }
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Any unexpected error while connecting ends as a visible "failed" state, never as a crash.
+    private val guard = CoroutineExceptionHandler { _, e ->
+        StateBus.log("[ucg] unexpected error: " + android.util.Log.getStackTraceString(e))
+        fail("خطای داخلی: ${e.javaClass.simpleName}: ${e.message}")
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + guard)
     private val lock = Any()
     private var connectJob: Job? = null
     private var core: CoreRunner? = null
@@ -135,9 +141,25 @@ class UcgVpnService : VpnService() {
                 return
             }
             tun = fd
-            val cfg = writeHevConfig(plan.port, mapDns = !plan.udpDns)
-            TProxyService.TProxyStartService(cfg.absolutePath, fd.fd)
-            hevRunning = true
+        }
+
+        val cfg = writeHevConfig(plan.port, mapDns = !plan.udpDns)
+        val started = try {
+            synchronized(lock) {
+                if (job?.isActive != true) return
+                TProxyService.TProxyStartService(cfg.absolutePath, fd.fd).also { hevRunning = it }
+            }
+        } catch (e: Throwable) {
+            // UnsatisfiedLinkError / ExceptionInInitializerError when the native library
+            // does not match this app. Report it instead of crashing.
+            StateBus.log("[ucg] tun2socks failed to load: " + android.util.Log.getStackTraceString(e))
+            fail("بخش VPN (tun2socks) بارگذاری نشد: ${e.javaClass.simpleName}")
+            return
+        }
+        if (!started) {
+            flushHevLog()
+            fail("بخش VPN (tun2socks) شروع نشد. لاگ رو ببین.")
+            return
         }
 
         StateBus.log("[ucg] connected, VPN is forwarding to 127.0.0.1:${plan.port}")
@@ -212,7 +234,23 @@ class UcgVpnService : VpnService() {
             sb.append("  network: 198.18.0.0\n  netmask: 255.254.0.0\n  cache-size: 10000\n")
         }
         sb.append("misc:\n  task-stack-size: 81920\n  log-level: warn\n")
+        sb.append("  log-file: ${hevLog().absolutePath}\n")
+        hevLog().delete()
         return File(cacheDir, "hev.yml").also { it.writeText(sb.toString()) }
+    }
+
+    private fun hevLog() = File(cacheDir, "hev.log")
+
+    /** Copies tun2socks' own warnings into the app log. */
+    private fun flushHevLog() {
+        try {
+            val f = hevLog()
+            if (f.isFile) {
+                f.readLines().takeLast(200).forEach { StateBus.log("[hev] $it") }
+                f.delete()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     // -------------------------------------------------------------- teardown
@@ -224,6 +262,7 @@ class UcgVpnService : VpnService() {
             } catch (_: Throwable) {
             }
             hevRunning = false
+            flushHevLog()
         }
         try {
             tun?.close()
