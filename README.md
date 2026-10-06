@@ -6,9 +6,9 @@
 
 برای شبکه‌های خیلی محدود ساخته شده: خودش یه مسیر سالم پیدا می‌کنه، تونل رمزنگاری‌شده می‌سازه و کل گوشی رو از داخلش رد می‌کنه.
 
-[[دانلود آخرین نسخه](https://img.shields.io/github/v/release/UCIRANX/UC-Guard?include_prereleases&label=%D8%AF%D8%A7%D9%86%D9%84%D9%88%D8%AF&style=for-the-badge&color=39FF14&labelColor=0B0B0B)](https://github.com/UCIRANX/UC-Guard/releases/latest)
-[[کانال تلگرام](https://img.shields.io/badge/Telegram-UCIRANIR-26A5E4?style=for-the-badge&logo=telegram&logoColor=white&labelColor=0B0B0B)](https://t.me/UCIRANIR)
-[Android](https://img.shields.io/badge/Android-8.0%2B-39FF14?style=for-the-badge&logo=android&logoColor=white&labelColor=0B0B0B)
+### [📥 دانلود آخرین نسخه](https://github.com/UCIRANX/UC-Guard/releases/latest) &nbsp;•&nbsp; [✈️ کانال تلگرام](https://t.me/UCIRANIR)
+
+📱 اندروید ۸ به بالا
 
 </div>
 
@@ -80,7 +80,7 @@
 
 ### کدنویسی این پروژه توسط تیم **یوسی ایران (UC IRAN)** انجام شده است 💚
 
-[[UC IRAN on Telegram](https://img.shields.io/badge/%DA%A9%D8%A7%D9%86%D8%A7%D9%84%20%D8%AA%D9%84%DA%AF%D8%B1%D8%A7%D9%85%20%DB%8C%D9%88%D8%B3%DB%8C%20%D8%A7%DB%8C%D8%B1%D8%A7%D9%86-@UCIRANIR-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/UCIRANIR)
+### [✈️ کانال تلگرام یوسی ایران: @UCIRANIR](https://t.me/UCIRANIR)
 
 **برای اخبار، آپدیت‌ها و پشتیبانی، به کانال ما بپیوندید** 👆
 
