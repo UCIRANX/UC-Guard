@@ -1,5 +1,13 @@
 package ir.uciranx.ucg.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -110,18 +118,14 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             // -------------------------------------------------------- psiphon
             if (s.usesPsiphon) {
-                SettingsCard("Psiphon") {
-                    OutlinedTextField(
-                        value = s.psiphonRegion,
-                        onValueChange = { v ->
-                            val clean = v.filter { it.isLetter() }.uppercase().take(2)
-                            SettingsStore.update { it.copy(psiphonRegion = clean) }
-                        },
-                        label = { Text("کشور خروجی، مثل DE (خالی یعنی خودکار)") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                SettingsCard("Psiphon", "کشور خروجی") {
+                    // "" means automatic: no --psiphon-region is passed, Psiphon picks itself.
+                    val options = listOf("") + PSIPHON_REGIONS
+                    TileGrid(options, minTileWidth = 64) { code, mod ->
+                        FlagTile(code, s.psiphonRegion == code, mod) {
+                            SettingsStore.update { it.copy(psiphonRegion = code) }
+                        }
+                    }
                 }
             }
 
@@ -135,6 +139,44 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** Exit countries Psiphon reports in its log ("psiphon can leave from: ..."). */
+private val PSIPHON_REGIONS = listOf(
+    "AT", "AU", "BE", "BR", "CA", "CH", "CZ", "DE", "DK", "ES", "FI", "FR", "GB", "ID",
+    "IE", "IN", "IT", "JP", "LT", "NL", "NO", "PL", "RO", "RS", "SE", "SG", "US",
+)
+
+/** Two-letter country code to its flag emoji. */
+private fun flagOf(code: String): String {
+    val base = 0x1F1E6 - 'A'.code
+    return code.uppercase().map { String(Character.toChars(base + it.code)) }.joinToString("")
+}
+
+@Composable
+private fun FlagTile(code: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier
+            .height(52.dp)
+            .clip(shape)
+            .background(if (selected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant)
+            .border(if (selected) 2.dp else 1.dp, if (selected) accent else MaterialTheme.colorScheme.outline, shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (code.isEmpty()) {
+            Text(
+                "خودکار",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        } else {
+            Text(flagOf(code), fontSize = 26.sp)
         }
     }
 }
