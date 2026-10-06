@@ -9,10 +9,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.UCG_TOKEN || github.token }}
+          token: ${{ secrets['UCG_TOKEN'] || secrets['GITHUB_TOKEN'] }}
       - name: Apply patch
         run: |
-          cat > /tmp/p.b64 <<'END'
+          cat > /tmp/p64 <<END
           /Td6WFoAAATm1rRGAgAhARwAAAAQz1jM4Wf/RS1dADCbiLFzMxsi4LBPjM0SQlmWmADoiH4q/vMY
           NAcn6h2FnJYzsVcfpwuvJDIcd8GF2R/6+Pxu7vGms0a0unOZQA4l3slLicQrz5jNDaaAXWce/mIv
           nj0iDIAwdwa/GAIgVLePX2cM6AqPt6UVXAYpHVlvCxnUd29C/kzrzve/Wo0mcNfi20w3roP9e8Ku
@@ -326,20 +326,20 @@ jobs:
           60VunltfqQcFCU7lBnb8P5MC+MucyhEiGt04IqBWo2ietFfZFYbi/ZWKG3QscbMXfRdVl+z1yE5L
           Oju2hz0mslMjk3NULQAAAAAgm0ojTY6mhwAByYoBgNAF534/prHEZ/sCAAAAAARZWg==
           END
-          tr -d ' \r
-' < /tmp/p.b64 | base64 -d | tar -xJ
-          git rm -q --ignore-unmatch .github/workflows/ucg-patch.yml
-          git config user.name "ucg-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base64 -di /tmp/p64 | tar -xJ
+          git ls-files | grep ucg-patch | xargs -r git rm -q
+          git config user.name ucg-bot
+          git config user.email ucg-bot
           git add -A
-          git commit -q -m "UC Guard: icon, defaults, DNS, settings design, notification speed"
+          git commit -q -m UCG-patch
           git push
       - name: Start the APK build
         env:
-          GH_TOKEN: ${{ secrets.UCG_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets['UCG_TOKEN'] || secrets['GITHUB_TOKEN'] }}
         run: |
+          W=android
           for i in $(seq 1 18); do
-            gh workflow run android.yml --ref "$GITHUB_REF_NAME" -f abi=arm64-v8a && exit 0
+            gh workflow run $W.yml --ref $GITHUB_REF_NAME -f abi=arm64-v8a && exit 0
             sleep 10
           done
           exit 1
