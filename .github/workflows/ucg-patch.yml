@@ -1,0 +1,74 @@
+name: UCG Patch
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets['UCG_TOKEN'] || secrets['GITHUB_TOKEN'] }}
+      - name: Apply patch
+        run: |
+          cat > /tmp/p64 <<END
+          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
+          END
+          base64 -di /tmp/p64 | tar -xJ
+          git ls-files | grep ucg-patch | xargs -r git rm -q
+          git config user.name ucg-bot
+          git config user.email ucg-bot
+          git add -A
+          git commit -q -m UCG-patch-flags
+          git push
+      - name: Start the APK build
+        env:
+          GH_TOKEN: ${{ secrets['UCG_TOKEN'] || secrets['GITHUB_TOKEN'] }}
+        run: |
+          W=android
+          for i in $(seq 1 18); do
+            gh workflow run $W.yml --ref $GITHUB_REF_NAME -f abi=arm64-v8a && exit 0
+            sleep 10
+          done
+          exit 1
