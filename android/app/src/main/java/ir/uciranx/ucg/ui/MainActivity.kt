@@ -6,6 +6,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,26 +20,24 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -53,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -106,7 +106,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Dark app: light (white) clock, signal and notification icons in the status bar.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             UcgTheme {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -162,28 +166,18 @@ fun HomeScreen(onConnect: () -> Unit, open: (Screen) -> Unit) {
             }
             Spacer(Modifier.height(20.dp))
             StatusText(st)
-            Spacer(Modifier.height(14.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                when (st) {
-                    is VpnState.Connected -> OutlinedButton(onClick = {
-                        UcgVpnService.send(ctx, UcgVpnService.ACTION_PAUSE)
-                    }) { Text("قطع موقت") }
-                    is VpnState.Paused -> Button(onClick = {
-                        UcgVpnService.send(ctx, UcgVpnService.ACTION_RESUME)
-                    }) { Text("اتصال مجدد") }
-                    else -> Unit
+            Spacer(Modifier.height(32.dp))
+            // Cards keep a comfortable width on tablets and in landscape.
+            Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+                InfoCard("پروتکل", s.label()) { open(Screen.SETTINGS) }
+                val split = when (s.splitMode) {
+                    SplitMode.OFF -> "خاموش (همه برنامه‌ها)"
+                    else -> "${s.splitMode.title} • ${s.selectedApps.size} برنامه"
                 }
+                InfoCard("تونل‌سازی برنامه‌ها", split) { open(Screen.APPS) }
+                val dns = s.dnsServers()
+                InfoCard("DNS", "${dns.size} سرور • ${dns.first()}") { open(Screen.DNS) }
             }
-
-            Spacer(Modifier.height(24.dp))
-            InfoCard("پروتکل", s.label()) { open(Screen.SETTINGS) }
-            val split = when (s.splitMode) {
-                SplitMode.OFF -> "خاموش (همه برنامه‌ها)"
-                else -> "${s.splitMode.title} • ${s.selectedApps.size} برنامه"
-            }
-            InfoCard("تونل‌سازی برنامه‌ها", split) { open(Screen.APPS) }
-            InfoCard("DNS", s.dnsServers().joinToString("  ")) { open(Screen.DNS) }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -199,6 +193,8 @@ private fun PowerButton(st: VpnState, onClick: () -> Unit) {
         is VpnState.Idle -> UcgColors.Idle
     }
     val color by animateColorAsState(target, label = "power-color")
+    // Scales with the screen: smaller on narrow phones, capped on tablets.
+    val size = (LocalConfiguration.current.screenWidthDp * 0.52f).coerceIn(150f, 220f).dp
     val pulse = rememberInfiniteTransition(label = "pulse")
     val wave by pulse.animateFloat(
         initialValue = 1f, targetValue = 1.07f,
@@ -207,7 +203,7 @@ private fun PowerButton(st: VpnState, onClick: () -> Unit) {
     )
     Box(
         Modifier
-            .size(196.dp)
+            .size(size)
             .scale(if (st is VpnState.Connecting) wave else 1f)
             .clip(CircleShape)
             .background(color.copy(alpha = 0.14f))
@@ -219,7 +215,7 @@ private fun PowerButton(st: VpnState, onClick: () -> Unit) {
             painterResource(R.drawable.ic_power),
             contentDescription = "اتصال",
             tint = color,
-            modifier = Modifier.size(78.dp),
+            modifier = Modifier.size(size * 0.4f),
         )
     }
 }

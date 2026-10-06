@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -81,7 +83,8 @@ fun AppsScreen(onBack: () -> Unit) {
     var showSystem by rememberSaveable { mutableStateOf(false) }
 
     Page("تونل‌سازی برنامه‌ها", onBack) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp)) {
+        Box(Modifier.fillMaxSize().padding(pad).imePadding(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = 720.dp).fillMaxSize().padding(horizontal = 16.dp)) {
             SplitMode.entries.forEach { m ->
                 RadioRow(m.title, m.hint, s.splitMode == m) {
                     SettingsStore.update { it.copy(splitMode = m) }
@@ -154,6 +157,7 @@ fun AppsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

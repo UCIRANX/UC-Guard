@@ -98,8 +98,6 @@ class CoreRunner(private val ctx: Context, private val onExit: (Int) -> Unit) {
                 }
             }
 
-            if (s.exitLoc.isNotBlank()) a += listOf("--exit-loc", s.exitLoc.trim())
-
             val port = when {
                 s.protocol == Protocol.TOR || helper == Helper.TOR_EXIT -> PORT_TOR
                 s.protocol == Protocol.PSIPHON || helper == Helper.PSIPHON_EXIT -> PORT_PSIPHON

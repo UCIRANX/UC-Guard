@@ -61,6 +61,28 @@ val DNS_PRESETS = listOf(
     DnsPreset("Quad9", "149.112.112.112"),
     DnsPreset("AdGuard", "94.140.14.14"),
     DnsPreset("OpenDNS", "208.67.222.222"),
+    DnsPreset("پیشنهادی", "111.88.96.50"),
+    DnsPreset("پیشنهادی", "111.88.96.51"),
+    DnsPreset("پیشنهادی", "111.88.96.54"),
+    DnsPreset("پیشنهادی", "111.88.96.55"),
+    DnsPreset("پیشنهادی", "111.88.96.56"),
+    DnsPreset("پیشنهادی", "111.88.96.57"),
+    DnsPreset("پیشنهادی", "87.228.47.200"),
+    DnsPreset("پیشنهادی", "87.228.47.201"),
+    DnsPreset("پیشنهادی", "193.233.112.67"),
+    DnsPreset("پیشنهادی", "193.233.112.68"),
+    DnsPreset("پیشنهادی", "193.233.112.88"),
+    DnsPreset("پیشنهادی", "45.155.204.190"),
+    DnsPreset("پیشنهادی", "37.230.192.51"),
+    DnsPreset("پیشنهادی", "46.8.158.6"),
+)
+
+/** DNS servers ticked by default. If none is ticked, 1.1.1.1 is used. */
+val DEFAULT_DNS = listOf(
+    "111.88.96.50", "111.88.96.51", "111.88.96.54", "111.88.96.55",
+    "111.88.96.56", "111.88.96.57", "87.228.47.200", "87.228.47.201",
+    "193.233.112.67", "193.233.112.68", "193.233.112.88", "45.155.204.190",
+    "37.230.192.51", "46.8.158.6",
 )
 
 val MASQUE_NOIZE = listOf(
@@ -90,11 +112,11 @@ fun isValidIp(raw: String): Boolean {
 fun isIpv6(ip: String) = ip.contains(':')
 
 data class Settings(
-    val protocol: Protocol = Protocol.MASQUE,
+    val protocol: Protocol = Protocol.WIREGUARD,
     val helper: Helper = Helper.NONE,
-    val scan: ScanMode = ScanMode.BALANCED,
+    val scan: ScanMode = ScanMode.TURBO,
     val ip: IpMode = IpMode.V4,
-    val masqueHttp2: Boolean = false,
+    val masqueHttp2: Boolean = true,
     val fragment: Boolean = false,
     val masqueNoize: String = "firewall",
     val wgNoize: String = "balanced",
@@ -103,7 +125,7 @@ data class Settings(
     val ipv6: Boolean = true,
     val splitMode: SplitMode = SplitMode.OFF,
     val selectedApps: Set<String> = emptySet(),
-    val dnsEnabled: List<String> = listOf("1.1.1.1", "8.8.8.8"),
+    val dnsEnabled: List<String> = DEFAULT_DNS,
     val customDns: List<String> = emptyList(),
 ) {
     /** Helper that really applies to the chosen protocol. */
@@ -194,10 +216,27 @@ object SettingsStore {
     val flow: StateFlow<Settings> = state.asStateFlow()
     val current: Settings get() = state.value
 
+    private const val VERSION_KEY = "settings_version"
+    private const val VERSION = 2
+
     fun init(ctx: Context) {
         val p = ctx.getSharedPreferences("ucg", Context.MODE_PRIVATE)
         prefs = p
-        state.value = Settings.fromJson(p.getString(KEY, null))
+        var s = Settings.fromJson(p.getString(KEY, null))
+        if (p.getInt(VERSION_KEY, 1) < 2 && p.contains(KEY)) {
+            // Version 2 changed the defaults; apply them once to an existing install too.
+            val d = Settings()
+            s = s.copy(
+                protocol = d.protocol,
+                scan = d.scan,
+                masqueHttp2 = d.masqueHttp2,
+                dnsEnabled = d.dnsEnabled,
+                exitLoc = "",
+            )
+            p.edit().putString(KEY, s.toJson()).apply()
+        }
+        p.edit().putInt(VERSION_KEY, VERSION).apply()
+        state.value = s
     }
 
     @Synchronized

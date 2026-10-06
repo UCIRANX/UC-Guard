@@ -1,13 +1,9 @@
 package ir.uciranx.ucg.ui
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,113 +24,117 @@ fun SettingsScreen(onBack: () -> Unit) {
     val s by SettingsStore.flow.collectAsStateWithLifecycle()
 
     Page("تنظیمات اتصال", onBack) { pad ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(pad)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-        ) {
+        ResponsiveColumn(pad) {
             Hint("تغییرات از اتصال بعدی اعمال میشن.")
 
-            Section("پروتکل")
-            Protocol.entries.forEach { p ->
-                RadioRow(p.title, p.hint, s.protocol == p) {
-                    SettingsStore.update { it.copy(protocol = p) }
+            // ------------------------------------------------------------ protocol
+            SettingsCard("پروتکل", "روش اصلی اتصال") {
+                TileGrid(Protocol.entries) { p, mod ->
+                    ChoiceTile(p.title, p.hint, s.protocol == p, mod) {
+                        SettingsStore.update { it.copy(protocol = p) }
+                    }
                 }
             }
 
+            // ------------------------------------------------------ tor / psiphon
             if (s.protocol.warpBased) {
-                Section("Tor و Psiphon")
-                Hint("می‌تونی Tor یا Psiphon رو به‌عنوان خروجی یا واسط کنار تونل بذاری.")
-                Helper.entries
-                    .filter { !it.isVia || s.protocol == Protocol.MASQUE }
-                    .forEach { h ->
-                        RadioRow(h.title, h.hint, s.effectiveHelper == h) {
+                SettingsCard(
+                    "Tor و Psiphon",
+                    "Tor یا Psiphon رو به‌عنوان خروجی یا واسط کنار تونل بذار",
+                ) {
+                    val helpers = Helper.entries.filter { !it.isVia || s.protocol == Protocol.MASQUE }
+                    TileGrid(helpers, minTileWidth = 200) { h, mod ->
+                        ChoiceTile(h.title, h.hint, s.effectiveHelper == h, mod) {
                             SettingsStore.update { it.copy(helper = h) }
                         }
                     }
-                if (s.protocol != Protocol.MASQUE) {
-                    Hint("حالت «واسط» فقط روی MASQUE کار می‌کنه.")
+                    if (s.protocol != Protocol.MASQUE) {
+                        Spacer(Modifier.height(8.dp))
+                        Hint("حالت «واسط» فقط روی MASQUE کار می‌کنه.")
+                    }
                 }
             }
 
+            // ------------------------------------------------- protocol options
             if (s.protocol == Protocol.MASQUE) {
-                Section("MASQUE")
-                SwitchRow(
-                    "HTTP/2 به‌جای HTTP/3",
-                    "وقتی UDP بسته‌ست یا خیلی کنده",
-                    s.masqueHttp2,
-                ) { v -> SettingsStore.update { it.copy(masqueHttp2 = v) } }
-                if (s.masqueHttp2) {
+                SettingsCard("MASQUE") {
                     SwitchRow(
-                        "تکه‌تکه کردن ClientHello",
-                        "وقتی خود HTTP/2 هم بسته میشه",
-                        s.fragment,
-                    ) { v -> SettingsStore.update { it.copy(fragment = v) } }
-                }
-                Hint("مبهم‌سازی ترافیک")
-                MASQUE_NOIZE.forEach { (key, title) ->
-                    RadioRow(title, null, s.masqueNoize == key) {
-                        SettingsStore.update { it.copy(masqueNoize = key) }
+                        "HTTP/2 به‌جای HTTP/3",
+                        "وقتی UDP بسته‌ست یا خیلی کنده",
+                        s.masqueHttp2,
+                    ) { v -> SettingsStore.update { it.copy(masqueHttp2 = v) } }
+                    if (s.masqueHttp2) {
+                        SwitchRow(
+                            "تکه‌تکه کردن ClientHello",
+                            "وقتی خود HTTP/2 هم بسته میشه",
+                            s.fragment,
+                        ) { v -> SettingsStore.update { it.copy(fragment = v) } }
                     }
+                    SubTitle("مبهم‌سازی ترافیک")
+                    ChoiceChips(
+                        options = MASQUE_NOIZE.map { it.first },
+                        selected = s.masqueNoize,
+                        label = { k -> MASQUE_NOIZE.first { it.first == k }.second },
+                    ) { k -> SettingsStore.update { it.copy(masqueNoize = k) } }
                 }
             }
 
             if (s.protocol == Protocol.WIREGUARD) {
-                Section("WireGuard")
-                Hint("مبهم‌سازی ترافیک")
-                WG_NOIZE.forEach { (key, title) ->
-                    RadioRow(title, null, s.wgNoize == key) {
-                        SettingsStore.update { it.copy(wgNoize = key) }
-                    }
+                SettingsCard("WireGuard") {
+                    SubTitle("مبهم‌سازی ترافیک")
+                    ChoiceChips(
+                        options = WG_NOIZE.map { it.first },
+                        selected = s.wgNoize,
+                        label = { k -> WG_NOIZE.first { it.first == k }.second },
+                    ) { k -> SettingsStore.update { it.copy(wgNoize = k) } }
                 }
             }
 
-            if (s.protocol.warpBased) {
-                Section("نوع اسکن")
-                ScanMode.entries.forEach { m ->
-                    RadioRow(m.title, null, s.scan == m) {
-                        SettingsStore.update { it.copy(scan = m) }
-                    }
+            // ------------------------------------------------------- scanning
+            SettingsCard("پیدا کردن مسیر", "اسکن و نسخه IP") {
+                if (s.protocol.warpBased) {
+                    SubTitle("نوع اسکن")
+                    ChoiceChips(
+                        options = ScanMode.entries,
+                        selected = s.scan,
+                        label = { it.title },
+                    ) { m -> SettingsStore.update { it.copy(scan = m) } }
                 }
+                SubTitle("نسخه IP")
+                ChoiceChips(
+                    options = IpMode.entries,
+                    selected = s.ip,
+                    label = { it.title },
+                ) { m -> SettingsStore.update { it.copy(ip = m) } }
             }
 
-            Section("نسخه IP برای پیدا کردن مسیر")
-            IpMode.entries.forEach { m ->
-                RadioRow(m.title, null, s.ip == m) { SettingsStore.update { it.copy(ip = m) } }
-            }
-
+            // -------------------------------------------------------- psiphon
             if (s.usesPsiphon) {
-                Section("Psiphon")
-                OutlinedTextField(
-                    value = s.psiphonRegion,
-                    onValueChange = { v ->
-                        val clean = v.filter { it.isLetter() }.uppercase().take(2)
-                        SettingsStore.update { it.copy(psiphonRegion = clean) }
-                    },
-                    label = { Text("کشور خروجی، مثل DE (خالی یعنی خودکار)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                SettingsCard("Psiphon") {
+                    OutlinedTextField(
+                        value = s.psiphonRegion,
+                        onValueChange = { v ->
+                            val clean = v.filter { it.isLetter() }.uppercase().take(2)
+                            SettingsStore.update { it.copy(psiphonRegion = clean) }
+                        },
+                        label = { Text("کشور خروجی، مثل DE (خالی یعنی خودکار)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
-            Section("پیشرفته")
-            OutlinedTextField(
-                value = s.exitLoc,
-                onValueChange = { v -> SettingsStore.update { it.copy(exitLoc = v.uppercase()) } },
-                label = { Text("کشورهای خروجی مجاز، مثل DE,NL یا !IR") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Hint("خالی بذاری یعنی هر کشوری قبوله.")
-            SwitchRow(
-                "جلوگیری از نشت IPv6",
-                "ترافیک IPv6 هم وارد VPN میشه",
-                s.ipv6,
-            ) { v -> SettingsStore.update { it.copy(ipv6 = v) } }
+            // ------------------------------------------------------- advanced
+            SettingsCard("پیشرفته") {
+                SwitchRow(
+                    "جلوگیری از نشت IPv6",
+                    "ترافیک IPv6 هم وارد VPN میشه",
+                    s.ipv6,
+                ) { v -> SettingsStore.update { it.copy(ipv6 = v) } }
+            }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

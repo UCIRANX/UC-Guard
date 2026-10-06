@@ -14,6 +14,19 @@ object Notifications {
     const val CHANNEL = "ucg_status"
     const val ID = 7
 
+    /** Golden yellow used as the notification background. */
+    private val GOLD = 0xFFFFC107.toInt()
+
+    /** Bytes per second as a short label, e.g. "1.4 MB/s". */
+    fun speed(bytesPerSecond: Long): String {
+        val b = bytesPerSecond.coerceAtLeast(0).toDouble()
+        return when {
+            b >= 1024 * 1024 -> "%.1f MB/s".format(b / (1024 * 1024))
+            b >= 1024 -> "%.0f KB/s".format(b / 1024)
+            else -> "%.0f B/s".format(b)
+        }
+    }
+
     fun createChannel(ctx: Context) {
         val ch = NotificationChannel(CHANNEL, "وضعیت اتصال", NotificationManager.IMPORTANCE_LOW).apply {
             setShowBadge(false)
@@ -29,7 +42,7 @@ object Notifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    fun build(ctx: Context, st: VpnState): Notification {
+    fun build(ctx: Context, st: VpnState, down: Long? = null, up: Long? = null): Notification {
         val open = PendingIntent.getActivity(
             ctx, 0,
             Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -46,6 +59,8 @@ object Notifications {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setColor(GOLD)
+            .setColorized(true)
 
         when (st) {
             is VpnState.Connecting -> {
@@ -53,7 +68,13 @@ object Notifications {
                 b.addAction(0, "قطع کامل", disconnect)
             }
             is VpnState.Connected -> {
-                b.setContentText("متصل • ${st.label}")
+                val text = if (down != null && up != null) {
+                    "↓ ${speed(down)}   ↑ ${speed(up)}"
+                } else {
+                    "متصل • ${st.label}"
+                }
+                b.setContentText(text)
+                b.setSubText(st.label)
                 b.setWhen(st.since).setShowWhen(true).setUsesChronometer(true)
                 b.addAction(0, "قطع موقت", serviceAction(ctx, UcgVpnService.ACTION_PAUSE, 2))
                 b.addAction(0, "قطع کامل", disconnect)

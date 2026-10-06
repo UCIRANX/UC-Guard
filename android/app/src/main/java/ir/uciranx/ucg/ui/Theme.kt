@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.Color
 
 object UcgColors {
     val Accent = Color(0xFF34D1BF)
-    val Connected = Color(0xFF34D1BF)
+    val Connected = Color(0xFF39FF14)
     val Connecting = Color(0xFFFFC857)
     val Paused = Color(0xFF7AA7FF)
     val Failed = Color(0xFFFF6B6B)

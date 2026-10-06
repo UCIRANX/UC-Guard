@@ -56,6 +56,7 @@ class UcgVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + guard)
     private val lock = Any()
     private var connectJob: Job? = null
+    private var speedJob: Job? = null
     private var core: CoreRunner? = null
     private var tun: ParcelFileDescriptor? = null
     private var hevRunning = false
@@ -163,7 +164,46 @@ class UcgVpnService : VpnService() {
         }
 
         StateBus.log("[ucg] connected, VPN is forwarding to 127.0.0.1:${plan.port}")
-        setState(VpnState.Connected(System.currentTimeMillis(), settings.label()))
+        val connected = VpnState.Connected(System.currentTimeMillis(), settings.label())
+        setState(connected)
+        startSpeedMeter(connected)
+    }
+
+    /** Shows live download / upload speed in the notification, once a second. */
+    private fun startSpeedMeter(st: VpnState.Connected) {
+        speedJob?.cancel()
+        speedJob = scope.launch {
+            var lastUp = -1L
+            var lastDown = -1L
+            var lastAt = System.nanoTime()
+            val nm = getSystemService(NotificationManager::class.java)
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                if (StateBus.state.value != st || !hevRunning) break
+                // [tx packets, tx bytes, rx packets, rx bytes]; tx = read from apps (upload),
+                // rx = written back to apps (download).
+                val stats = try {
+                    TProxyService.TProxyGetStats()
+                } catch (_: Throwable) {
+                    null
+                } ?: continue
+                if (stats.size < 4) continue
+                val now = System.nanoTime()
+                val up = stats[1]
+                val down = stats[3]
+                if (lastUp >= 0) {
+                    val secs = ((now - lastAt) / 1e9).coerceAtLeast(0.2)
+                    val upRate = ((up - lastUp) / secs).toLong()
+                    val downRate = ((down - lastDown) / secs).toLong()
+                    if (StateBus.state.value == st) {
+                        nm.notify(Notifications.ID, Notifications.build(this@UcgVpnService, st, downRate, upRate))
+                    }
+                }
+                lastUp = up
+                lastDown = down
+                lastAt = now
+            }
+        }
     }
 
     private fun onCoreDied(code: Int) {
@@ -256,6 +296,8 @@ class UcgVpnService : VpnService() {
     // -------------------------------------------------------------- teardown
 
     private fun teardown() = synchronized(lock) {
+        speedJob?.cancel()
+        speedJob = null
         if (hevRunning) {
             try {
                 TProxyService.TProxyStopService()

@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar icon: the letters "UC". Android draws status bar icons in one colour
+     (white on most phones), so the shape matters, not the colour. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
-    android:viewportWidth="56" android:viewportHeight="56">
-    <group android:translateX="-26" android:translateY="-27">
-        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
-            android:pathData="M54,28 L76,36 L76,52 C76,66.5 66.6,77.6 54,82 C41.4,77.6 32,66.5 32,52 L32,36 Z M54,34.4 L70,40.2 L70,52.4 C70,63.4 63.2,72 54,75.6 C44.8,72 38,63.4 38,52.4 L38,40.2 Z" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M48,50 A6,6 0 1,0 60,50 A6,6 0 1,0 48,50 Z" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M51.2,54 L56.8,54 L58.4,66 L49.6,66 Z" />
-    </group>
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:strokeColor="#FF39FF14" android:strokeWidth="2.6"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M2.3,5.5 L2.3,13.2 A4.1,4.1 0 0,0 10.5,13.2 L10.5,5.5" />
+    <path android:strokeColor="#FF39FF14" android:strokeWidth="2.6"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M21.8,8.2 A5.9,5.9 0 1,0 21.8,15.8" />
 </vector>
